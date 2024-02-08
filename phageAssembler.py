@@ -1,10 +1,6 @@
-#!/usr/bin/env python2.7
-
-# By Dan Russell, November 2016
+#!/usr/bin/env python3
 
 """
-Requires python2.7+ for the argparse module.
-
 Arguments:
 	fastq      		# Required. The file of reads in fastq format.
         genome_name		# Optional. Specify the name of this genome. Default will be the input fastq file before any special characters.
@@ -65,7 +61,7 @@ else:
 log_file_name = '%s_phageAssembler.log' % genome_name
 log_file = open(log_file_name,'w')
 def printlog(message):
-    print message
+    print(message)
     log_file.write(message + "\n")
 
 #Input
