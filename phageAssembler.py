@@ -44,6 +44,8 @@ parser.add_argument('--no-skewer', dest='skewer', action='store_false')
 parser.add_argument('--no-cleanup', dest='cleanup', action='store_false')
 parser.set_defaults(cutadapt=True, skewer=True, cleanup=True)
 
+cwd = os.path.abspath(os.getcwd())
+
 # Parse command-line options and save values
 args = parser.parse_args()
 
@@ -68,7 +70,7 @@ else:
     adapter_list = DEFAULT_ADAPTER_LIST
 
 #Log file
-log_file_name = '%s_phageAssembler.log' % genome_name
+log_file_name = cwd+'/%s_phageAssembler.log' % genome_name
 log_file = open(log_file_name,'w')
 def printlog(message):
     print(message)
@@ -101,6 +103,10 @@ def wc(filename):
 
 # Total reads in initial fastq file
 total_reads = int(wc(fastq)/4)
+
+#Create and move to project directory
+subprocess.call(["mkdir", "%s" % genome_name])
+os.chdir("%s" % genome_name)
 
 #Subset of reads function
 def subsample_fastq_file(filename, number_of_reads, head_tail="head", new_file_if_all_reads=True):
@@ -149,7 +155,7 @@ def run_skewer(filename):
 
 #Prepare assembly fastq by downsampling and trimming
 printlog("\n***PREPARING FASTQ FOR ASSEMBLY***")
-assembly_fastq,num_reads = subsample_fastq_file(fastq, num_reads)
+assembly_fastq,num_reads = subsample_fastq_file("../"+fastq, num_reads)
 if cutadapt:
     printlog("\tRemoving NextSeq artifacts with cutadapt...")
     assembly_fastq = run_cutadapt(assembly_fastq)
@@ -157,6 +163,8 @@ if skewer:
     printlog("\tTrimming reads with skewer...")
     assembly_fastq = run_skewer(assembly_fastq)
 printlog("\tFinal fastq file for assembly: %s" % assembly_fastq)
+
+#move(assembly_fastq,".")
 
 #Assemble with unicycler
 def run_unicycler(fastq):
@@ -278,7 +286,13 @@ def rc_reblast(seq_file):
     rc_out.close()
     return biopy_blast(out_file, DEFAULT_BLAST_DATABASE, outfile='%s_blast.xml' % out_file.split('.')[0])
 
-os.chdir("..")
+def blast_cleanup():
+    subprocess.call("rm *.fasta", shell=True)
+    subprocess.call("rm *blast.xml", shell=True)
+#    subprocess.call(["rm","*.fasta"])
+#    subprocess.call(["rm","*blast.xml"])
+
+os.chdir(cwd+"/"+genome_name)
 
 #BLAST
 printlog("\n***BLAST***")
@@ -312,6 +326,12 @@ if reblasted_contigs:
         cg = display_blast_results(result, reblast=True)
         if cg[1]:
             base_ones.append(cg[1])
+
+#blast_cleanup()
+if cleanup:
+    printlog("\tRemoving blast files...")
+    blast_cleanup()
+    printlog("\t\t...blast files removed.")
 
 #AceUtil
 def run_AceUtil(acefile,contig=None):
@@ -388,4 +408,4 @@ for contig in contigs:
     i += 1
 
 log_file.close()
-
+move(log_file_name,'.')
