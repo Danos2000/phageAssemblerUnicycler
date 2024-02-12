@@ -10,6 +10,7 @@ Arguments:
     no-cutadapt		# Flag. Skips NextSeq-specific cutadapt trimming.
     no-skewer		# Flag. Skips skewer trimming.
     no-clean		# Flag. Skips cleanup steps, resulting in more output files.
+    no-rotate		# Flag. Skips trying to re-orient fasta to similar Base 1s
 
 """
 
@@ -42,7 +43,8 @@ parser.add_argument('-c','--reads_percent_cutoff', help="Contigs with more than 
 parser.add_argument('--no-cutadapt', dest='cutadapt', action='store_false')
 parser.add_argument('--no-skewer', dest='skewer', action='store_false')
 parser.add_argument('--no-cleanup', dest='cleanup', action='store_false')
-parser.set_defaults(cutadapt=True, skewer=True, cleanup=True)
+parser.add_argument('--no-rotate', dest='rotate', action='store_false')
+parser.set_defaults(cutadapt=True, skewer=True, cleanup=True, rotate=True)
 
 cwd = os.path.abspath(os.getcwd())
 
@@ -58,6 +60,7 @@ num_reads = args.num_reads
 reads_percent_cutoff = args.reads_percent_cutoff
 cutadapt = args.cutadapt
 skewer = args.skewer
+rotate = args.rotate
 
 if args.genome_name:
     genome_name = args.genome_name
@@ -106,7 +109,8 @@ total_reads = int(wc(fastq)/4)
 
 #Create and move to project directory
 subprocess.call(["mkdir", "%s" % genome_name])
-os.chdir("%s" % genome_name)
+project_dir = cwd+"/"+genome_name
+os.chdir(project_dir)
 
 #Subset of reads function
 def subsample_fastq_file(filename, number_of_reads, head_tail="head", new_file_if_all_reads=True):
@@ -292,7 +296,7 @@ def blast_cleanup():
 #    subprocess.call(["rm","*.fasta"])
 #    subprocess.call(["rm","*blast.xml"])
 
-os.chdir(cwd+"/"+genome_name)
+os.chdir(project_dir)
 
 #BLAST
 printlog("\n***BLAST***")
@@ -333,6 +337,57 @@ if cleanup:
     blast_cleanup()
     printlog("\t\t...blast files removed.")
 
+#Reorient to Base 1 if possible
+def reorient_fasta(fasta,complement,position):
+    seq = SeqIO.parse(open(fasta,'r'),'fasta')
+    s = list(seq)[0]
+    if complement:
+        s2 = s.reverse_complement()
+        s2.id = s.id
+        s2.name = s.name
+        s2.description = s.description
+        s = s2
+    return s[position-1:] + s[:position-1]
+
+reorient = False
+if rotate:
+    printlog("\n***ATTEMPTING TO ORIENT TO BASE 1***")
+    with open('%s/%s/unicycler_assembly/assembly.gfa' % (cwd,genome_name)) as f:
+        for line in f:
+            pass
+        last_line = line.rstrip().split("\t")
+    if len(contigs) != 1:
+        printlog("\tMore than one contig was assembled, so skipping Base 1 orientation.")
+    elif (len(last_line) > 3 and last_line[0] != "L" and last_line[1] != "1" and last_line[5] != "0M"):
+        printlog("\tOnly one contig was assembled, but ends don't cleanly link, so skipping Base 1 orientation.")
+    elif (not base_ones):
+        printlog("\tNo BLAST matches to known Base 1s, so skipping Base 1 orientation.")
+    else:
+        reorient = True
+        printlog("\tThe assembly produced a single contig, and its ends link together. Great!")
+        printlog("\tLet's try to reorient the genome to match Base 1s of similar genomes...")
+        newseq = reorient_fasta('%s/unicycler_assembly/assembly.fasta' % project_dir,base_ones[0][3],base_ones[0][1])
+        rc_name = '%s_reoriented.fasta' % genome_name
+        SeqIO.write(newseq, rc_name, 'fasta')
+        printlog("\t\t...grabbing fastq from old consed/solexa_dir.")
+        move("%s/consed/solexa_dir/%s" % (project_dir,assembly_fastq), project_dir)
+        printlog("\t\t...removing previous consed directory.")
+        subprocess.call(("rm -r %s/consed" % project_dir), shell=True)
+        printlog("\t\t...previous consed dir removed.")
+        printlog("\t\t...creating new consed directory.")
+        subprocess.call(["mkdir", "%s/consed" % project_dir])
+        printlog("\t\t...created new consed directory.")
+        move("%s/%s" %(project_dir,assembly_fastq),"%s/consed/" % project_dir)
+        printlog("\t\t...moved fastq to new consed directory.")
+        move(rc_name,"%s/consed" % project_dir)
+        printlog("\t\t...moved reoriented fasta to new consed directory.")
+        os.chdir("./consed/")
+        printlog("\t\t...aligning reads to reoriented consensus.")
+        align_reads(rc_name,"%s" % assembly_fastq)
+        printlog("\t\t...reads aligned and consed files created.")
+        
+        # Remove old consed dir, make new consed dir with newly aligned deal
+
 #AceUtil
 def run_AceUtil(acefile,contig=None):
     try:
@@ -348,13 +403,20 @@ def run_AceUtil(acefile,contig=None):
     return outfile
 
 printlog("\n***ACE UTIL***")
-aceutil_infile = "./consed/edit_dir/UNIout.ace.1"
-for contig in contigs_to_blast:
-    printlog("\tRunning AceUtil on %s..." % contig.name)
+if reorient:
+    aceutil_infile = "%s/consed/edit_dir/%s_reoriented.ace.1" % (project_dir,genome_name)
+    printlog("\tRunning AceUtil on lone contig...")
     log_file.close()
-    aceutil_outfile = run_AceUtil(aceutil_infile,contig=contig.name)
-    aceutil_infile = aceutil_outfile
-    log_file = open(log_file_name,'a')
+    run_AceUtil(aceutil_infile,contig="1")
+    log_file = open(log_file_name,'a')  
+else:
+    aceutil_infile = "./consed/edit_dir/UNIout.ace.1"
+    for contig in contigs_to_blast:
+        printlog("\tRunning AceUtil on %s..." % contig.name)
+        log_file.close()
+        aceutil_outfile = run_AceUtil(aceutil_infile,contig=contig.name)
+        aceutil_infile = aceutil_outfile
+        log_file = open(log_file_name,'a')
 printlog("\tAceUtil analysis complete.")
 
 #Report
@@ -372,7 +434,10 @@ else:
     printlog("\t\tUnable to determine a likely cluster.")
 
 printlog("\n\tBase One Guess")
-if base_ones:
+if reorient:
+    printlog("\t\tSince there was a single contig with a blastn match to Base 1 of another genome, the contig was reoriented to match that genome.")
+    printlog("\t\tThat means hopefully the correct Base 1 is at the first base of the current contig in the consed folder.")
+elif base_ones:
     for base_one in base_ones:
         out = "\t\tIn the blast hit to %s, query position %s matches subject position %s." % (base_one[0], str(base_one[1]), str(base_one[2]))
         out2 = "\t\tLikely Base 1 position: %s in %s" % (base_one[1], base_one[4]) 
@@ -385,7 +450,10 @@ else:
 
 printlog("\n\tGC Info")
 i=0
-all_contig_objects=SeqIO.parse(open('./unicycler_assembly/assembly.fasta','r'),'fasta')
+if not reorient:
+    all_contig_objects=SeqIO.parse(open('./unicycler_assembly/assembly.fasta','r'),'fasta')
+else:
+    all_contig_objects=SeqIO.parse(open('%s/consed/edit_dir/%s_reoriented.fasta' % (project_dir,genome_name),'r'),'fasta')
 for contig in all_contig_objects:
     if i>=10:
         printlog("\t\tOnly showing first 10 contigs.")
@@ -408,4 +476,4 @@ for contig in contigs:
     i += 1
 
 log_file.close()
-move(log_file_name,'.')
+move(log_file_name,project_dir)
