@@ -11,15 +11,16 @@ Arguments:
     no-skewer		# Flag. Skips skewer trimming.
     no-clean		# Flag. Skips cleanup steps, resulting in more output files.
     no-rotate		# Flag. Skips trying to re-orient fasta to similar Base 1s
+    quiet			# Flag. Suppresses all output
 
 """
 
-PATH_TO_UNICYCLER = "/usr/local/genome/bin/"
-PATH_TO_ACEUTIL = "~/Desktop/GitHub/phageAssemblerUnicycler/AceUtil"
+PATH_TO_UNICYCLER = "/opt/anaconda3/bin/"
+PATH_TO_ACEUTIL = "~/Desktop/Software/GitHub/phageAssemblerUnicycler/AceUtil"
 PATH_TO_ALIGN2REF = "/usr/local/genome/bin/"
 DEFAULT_NUM_READS = 100000
-DEFAULT_ADAPTER_LIST = "~/Desktop/GitHub/phageAssemblerUnicycler/Adapters/Adapters.fasta"
-DEFAULT_BLAST_DATABASE = "~/Desktop/GitHub/phageAssemblerUnicycler/BLASTdbs/Actino_DB"
+DEFAULT_ADAPTER_LIST = "~/Desktop/Software/GitHub/phageAssemblerUnicycler/Adapters/Adapters.fasta"
+DEFAULT_BLAST_DATABASE = "~/Desktop/Software/GitHub/phageAssemblerUnicycler/BLASTdbs/Actino_DB"
 
 #from datetime import datetime
 import subprocess
@@ -44,7 +45,8 @@ parser.add_argument('--no-cutadapt', dest='cutadapt', action='store_false')
 parser.add_argument('--no-skewer', dest='skewer', action='store_false')
 parser.add_argument('--no-cleanup', dest='cleanup', action='store_false')
 parser.add_argument('--no-rotate', dest='rotate', action='store_false')
-parser.set_defaults(cutadapt=True, skewer=True, cleanup=True, rotate=True)
+parser.add_argument('--quiet', dest='quiet', action='store_true', help="Suppresses output to the terminal but keeps output in log file.")
+parser.set_defaults(cutadapt=True, skewer=True, cleanup=True, rotate=True, quiet=False)
 
 cwd = os.path.abspath(os.getcwd())
 
@@ -54,6 +56,7 @@ args = parser.parse_args()
 fastq = args.fastq
 if not os.path.isfile(fastq):
     sys.exit("ERROR: Couldn't find the file %s" % fastq)
+fastq = os.path.abspath(fastq)
 
 cleanup = args.cleanup
 num_reads = args.num_reads
@@ -61,6 +64,7 @@ reads_percent_cutoff = args.reads_percent_cutoff
 cutadapt = args.cutadapt
 skewer = args.skewer
 rotate = args.rotate
+quiet = args.quiet
 
 if args.genome_name:
     genome_name = args.genome_name
@@ -76,7 +80,8 @@ else:
 log_file_name = cwd+'/%s_phageAssembler.log' % genome_name
 log_file = open(log_file_name,'w')
 def printlog(message):
-    print(message)
+    if not quiet:
+        print(message)
     log_file.write(message + "\n")
 printlog("Command: " + " ".join(sys.argv))
 
@@ -108,7 +113,7 @@ def wc(filename):
 total_reads = int(wc(fastq)/4)
 
 #Create and move to project directory
-subprocess.call(["mkdir", "%s" % genome_name])
+subprocess.call(["mkdir", "%s/%s" % (cwd, genome_name)])
 project_dir = cwd+"/"+genome_name
 os.chdir(project_dir)
 
@@ -135,7 +140,10 @@ def subsample_fastq_file(filename, number_of_reads, head_tail="head", new_file_i
 def run_cutadapt(filename):
     new_filename = os.path.splitext(filename)[0]+'_cutadapt.fastq'
     command = 'cutadapt --nextseq-trim 30 -o %s %s > cutadapt.log' % (new_filename,filename)
-    subprocess.call(command, shell=True)
+    if quiet:
+        subprocess.call(command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    else:
+        subprocess.call(command, shell=True)
     printlog("\t\t...cutadapt trimming complete, output in %s" % new_filename)
     if cleanup:
         printlog("\tRemoving %s and cutadapt.log to tidy up..." % filename)
@@ -146,7 +154,10 @@ def run_cutadapt(filename):
 
 #Function to run skewer
 def run_skewer(filename):
-    subprocess.call('skewer -x %s -q 20 -Q 30 -n -l 50 -o %s -t 8 %s' % (adapter_list,genome_name,filename), shell=True)
+    if quiet:
+        subprocess.call('skewer -x %s -q 20 -Q 30 -n -l 50 -o %s -t 8 %s' % (adapter_list,genome_name,filename), shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    else:
+        subprocess.call('skewer -x %s -q 20 -Q 30 -n -l 50 -o %s -t 8 %s' % (adapter_list,genome_name,filename), shell=True)
     new_filename = genome_name+'-trimmed.fastq'
     printlog("\t\t...skewer trimming complete, output in %s" % new_filename)
     os.rename(genome_name+'-trimmed.log','skewer.log')
@@ -159,7 +170,7 @@ def run_skewer(filename):
 
 #Prepare assembly fastq by downsampling and trimming
 printlog("\n***PREPARING FASTQ FOR ASSEMBLY***")
-assembly_fastq,num_reads = subsample_fastq_file("../"+fastq, num_reads)
+assembly_fastq,num_reads = subsample_fastq_file(fastq, num_reads)
 if cutadapt:
     printlog("\tRemoving NextSeq artifacts with cutadapt...")
     assembly_fastq = run_cutadapt(assembly_fastq)
@@ -172,9 +183,12 @@ printlog("\tFinal fastq file for assembly: %s" % assembly_fastq)
 
 #Assemble with unicycler
 def run_unicycler(fastq):
-    unicycler_command = "%s/unicycler -s %s -o unicycler_assembly --no_rotate" % (PATH_TO_UNICYCLER, fastq)
+    unicycler_command = "%s/unicycler -s %s -o unicycler_assembly --no_rotate --kmers 87,115,121,127" % (PATH_TO_UNICYCLER, fastq)
     printlog("\tRunning: %s" % unicycler_command)
-    subprocess.call(unicycler_command, shell=True)
+    if quiet:
+        subprocess.call(unicycler_command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    else:
+        subprocess.call(unicycler_command, shell=True)
 
 printlog("\n***ASSEMBLING READS WITH UNICYCLER***")
 run_unicycler(assembly_fastq)
@@ -183,7 +197,10 @@ printlog("\tUnicycler assembly complete. Details in /unicycler_assembly/unicycle
 def align_reads(fasta,fastq):
     command = "%s/align2Reference.py --fasta %s --fastq %s" % (PATH_TO_ALIGN2REF, fasta, fastq)
 #    printlog("\tWill run: %s" % newbler_command)
-    subprocess.call(command, shell=True)
+    if quiet:
+        subprocess.call(command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    else:
+        subprocess.call(command, shell=True)
 
 printlog("\n***CREATING CONSED DIRECTORY STRUCTURE AND ALIGNING READS***")
 subprocess.call(["mkdir", "consed"])
@@ -219,12 +236,18 @@ printlog("\t* These contigs have > %s%% of the initial reads and will thus be bl
 
 def blast_contigs(seqfile,database,outfile="blast_results.txt"):
     blast_command = "blastn -db %s -query %s -out %s" % (database,seqfile,outfile)
-    subprocess.call(blast_command,shell=True)
+    if quiet:
+        subprocess.call(blast_command,shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    else:
+        subprocess.call(blast_command,shell=True)
     return outfile
 
 def biopy_blast(queryseq,database,outfile="blast_output.xml"):
     blast_command = "blastn -db %s -query %s -out %s -outfmt 5" % (database,queryseq,outfile)
-    subprocess.call(blast_command,shell=True)
+    if quiet:
+        subprocess.call(blast_command,shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    else:
+        subprocess.call(blast_command,shell=True)
     result_handle = open(outfile,'r')
     return NCBIXML.read(result_handle)
 
@@ -398,8 +421,11 @@ def run_AceUtil(acefile,contig=None):
     if contig:
         command += contig
     command += " >> %s" % (log_file_name)
-    print("\t\tCommand: %s" % command)
-    subprocess.call(command, shell=True)
+    if quiet:
+        subprocess.call(command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    else:
+        print("\t\tCommand: %s" % command)
+        subprocess.call(command, shell=True)
     return outfile
 
 printlog("\n***ACE UTIL***")
