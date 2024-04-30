@@ -2,7 +2,7 @@
 
 """
 Arguments:
-	fastq_dir      	# Required. Directory with fastq files.
+    fastq_dir      	# Required. Directory with fastq files.
     num_reads		# Optional. Number of reads to try assembling.  Default: 100000
     cutoff_percent	# Optional. Contigs with more than this percentage of assembled reads will be blasted and AceUtiled. Default: 5%
 
