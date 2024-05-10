@@ -15,12 +15,10 @@ Arguments:
 
 """
 
-PATH_TO_UNICYCLER = "/opt/anaconda3/bin/"
-PATH_TO_ACEUTIL = "~/Desktop/Software/GitHub/phageAssemblerUnicycler/AceUtil"
-PATH_TO_ALIGN2REF = "/usr/local/genome/bin/"
 DEFAULT_NUM_READS = 100000
-DEFAULT_ADAPTER_LIST = "~/Desktop/Software/GitHub/phageAssemblerUnicycler/Adapters/Adapters.fasta"
-DEFAULT_BLAST_DATABASE = "~/Desktop/Software/GitHub/phageAssemblerUnicycler/BLASTdbs/Actino_DB"
+PATH_TO_ACEUTIL = "~/phageAssemblerUnicycler/AceUtil"
+DEFAULT_ADAPTER_LIST = "~/phageAssemblerUnicycler/Adapters/Adapters.fasta"
+DEFAULT_BLAST_DATABASE = "~/phageAssemblerUnicycler/BLASTdbs/Actino_DB"
 
 #from datetime import datetime
 import subprocess
@@ -28,7 +26,7 @@ import argparse
 import sys
 import os
 import re
-from shutil import copy, move
+from shutil import copy, move, which
 from Bio import SeqIO
 from Bio.SeqUtils import gc_fraction
 from Bio.Sequencing import Ace
@@ -84,6 +82,22 @@ def printlog(message):
         print(message)
     log_file.write(message + "\n")
 printlog("Command: " + " ".join(sys.argv))
+
+
+# Check for required programs
+printlog("\n***CHECKING FOR REQUIRED PROGRAMS***")
+def check_dependency(name):
+    if which(name) is None:
+        printlog("\tERROR: Couldn't find %s on your path" % name)
+        sys.exit("ERROR: Couldn't find %s on your path" % name)
+    else:
+        printlog("\t%s found at %s..." % (name,which(name)))
+
+check_dependency("unicycler")
+check_dependency("align2Reference.py")
+check_dependency("blastn")
+check_dependency("skewer")
+check_dependency("cutadapt")
 
 #Input
 printlog("\n***INPUT AND SETTINGS***")
@@ -183,7 +197,7 @@ printlog("\tFinal fastq file for assembly: %s" % assembly_fastq)
 
 #Assemble with unicycler
 def run_unicycler(fastq):
-    unicycler_command = "%s/unicycler -s %s -o unicycler_assembly --no_rotate --kmers 87,115,121,127" % (PATH_TO_UNICYCLER, fastq)
+    unicycler_command = "unicycler -s %s -o unicycler_assembly --no_rotate --kmers 87,115,121,127" % fastq
     printlog("\tRunning: %s" % unicycler_command)
     if quiet:
         subprocess.call(unicycler_command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
@@ -195,7 +209,7 @@ run_unicycler(assembly_fastq)
 printlog("\tUnicycler assembly complete. Details in /unicycler_assembly/unicycler.log")
 
 def align_reads(fasta,fastq):
-    command = "%s/align2Reference.py --fasta %s --fastq %s" % (PATH_TO_ALIGN2REF, fasta, fastq)
+    command = "align2Reference.py --fasta %s --fastq %s" % (fasta, fastq)
 #    printlog("\tWill run: %s" % newbler_command)
     if quiet:
         subprocess.call(command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
