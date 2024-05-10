@@ -8,19 +8,17 @@ Arguments:
 
 """
 
-PATH_TO_PHAGEASSEMBLER = "/Users/DAR78/Desktop/Software/GitHub/phageAssemblerUnicycler/phageAssembler.py"
-
 #from datetime import datetime
 import subprocess
 import argparse
 import sys
 import os
 import re
-from shutil import copy, move
+from shutil import copy, move, which
 
 # Make parser for options listed above
 parser = argparse.ArgumentParser(description='A script to run phageAssembler on multiple phage genomes.',formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument('--fastq_dir', help="Directory with fastq or fastq.gz files to be assembled. One file per genome.")
+parser.add_argument('--fastq_dir', help="Directory with fastq or fastq.gz files to be assembled. One file per genome.", required=True)
 parser.add_argument('-n','--num_reads', help="The number of reads to try assembling from each file.", type=int, default=100000)
 parser.add_argument('-c','--reads_percent_cutoff', help="Contigs with more than this percentage of assembled reads will be blasted and AceUtiled.", type=int, default=5)
 
@@ -43,12 +41,17 @@ args = parser.parse_args()
 num_reads = args.num_reads
 reads_percent_cutoff = args.reads_percent_cutoff
 
-#DEBUG
-#print_cwd()
-
 print(f"{bcolors.BOLD}Command: " + " ".join(sys.argv)+f"{bcolors.ENDC}")
 
-fastq_dir = args.fastq_dir
+def check_dependency(name):
+    if which(name) is None:
+        sys.exit("ERROR: Couldn't find %s on your path" % name)
+    else:
+        print("\t%s found at %s..." % (name,which(name)))
+
+check_dependency("phageAssembler.py")
+
+fastq_dir = os.path.abspath(args.fastq_dir)
 if not os.path.isdir(fastq_dir):
     sys.exit("ERROR: Couldn't find the directory %s, or %s is not a directory." % (fastq_dir,fastq_dir))
 
@@ -72,7 +75,7 @@ def gunzip_fastqs(file_list):
 # Run phageAssembler
 def phageAssemble(fastq,nreads,rcutoff):
     print("\t\tCommand: phageAssembler.py -n %s -c %s --quiet %s" % (nreads,rcutoff,fastq))
-    result = subprocess.run([PATH_TO_PHAGEASSEMBLER,"-n",str(nreads),"-c",str(rcutoff),"--quiet",fastq])
+    result = subprocess.run(["phageAssembler.py","-n",str(nreads),"-c",str(rcutoff),"--quiet",fastq])
     if result.returncode == 0:
         print(f"{bcolors.OKGREEN}\t\t...finished running phageAssembler on %s.{bcolors.ENDC}" % fastq)
     else:
