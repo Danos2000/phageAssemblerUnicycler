@@ -197,7 +197,7 @@ printlog("\tFinal fastq file for assembly: %s" % assembly_fastq)
 
 #Assemble with unicycler
 def run_unicycler(fastq):
-    unicycler_command = "unicycler -s %s -o unicycler_assembly --no_rotate --kmers 87,115,121,127" % fastq
+    unicycler_command = "unicycler -s %s -o unicycler_assembly --no_rotate" % fastq
     printlog("\tRunning: %s" % unicycler_command)
     if quiet:
         subprocess.call(unicycler_command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
